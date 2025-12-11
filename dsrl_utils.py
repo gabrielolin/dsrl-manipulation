@@ -44,6 +44,8 @@ class PandaDiffusionPolicyWrapper:
         # State/action history tracking per environment
         self.state_history = []
         self.action_history = []
+
+        self.use_times_embeddings = True
         
     def __call__(self, obs, initial_noise, return_numpy=True):
         """
@@ -69,6 +71,7 @@ class PandaDiffusionPolicyWrapper:
         previous_actions_mask_batch = []
         episode_timesteps_batch = []
         
+
         for i in range(batch_size):
             # Get state sequence
             if len(self.state_history[i]) > 0:
@@ -118,7 +121,11 @@ class PandaDiffusionPolicyWrapper:
             # Episode timesteps
             current_timestep = len(self.state_history[i]) - 1
             start_timestep = max(0, current_timestep - self.num_previous_states + 1)
-            episode_timesteps = np.arange(start_timestep, start_timestep + self.num_previous_states)
+
+            if self.use_times_embeddings:
+                episode_timesteps = np.arange(start_timestep, start_timestep + self.num_previous_states)
+            else:
+                episode_timesteps = np.zeros(self.num_previous_states)
             
             previous_states_batch.append(states_normalized)
             previous_actions_batch.append(actions_normalized)
@@ -164,6 +171,7 @@ class PandaDiffusionPolicyWrapper:
         """Reset state/action history (call when environment resets)"""
         self.state_history = []
         self.action_history = []
+        #print("PandaDiffusionPolicyWrapper reset history")
 		
 def load_base_policy(cfg):
     device = cfg.model.device

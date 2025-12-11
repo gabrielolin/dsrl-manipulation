@@ -10,7 +10,7 @@ base_policy_path: ../diffusion_rl/data/diffusion_policy_transformer_models/diffu
 normalization_path: ./dppo/log/gym/${env_name}/normalization.npz
 dppo_path: ./dppo
 
-algorithm: dsrl_na # options are: dsrl_na, dsrl_sac
+algorithm: dsrl_sac # options are: dsrl_na, dsrl_sac
 
 seed: 1
 device: cuda:0
@@ -65,7 +65,7 @@ train:
   discount: 0.99
   ent_coef: -1
   target_ent: 0.0
-  init_rollout_steps: 2001 # Number of rollout steps of standard diffusion policy to collect for replay buffer before training starts
+  init_rollout_steps: 1 # Number of rollout steps of standard diffusion policy to collect for replay buffer before training starts
   action_magnitude: 1.5 # Maximum action magnitude in noise action space
   n_critics: 2 # Number of critic Q networks
   critic_backup_combine_type: min

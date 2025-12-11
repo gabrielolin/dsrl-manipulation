@@ -104,6 +104,32 @@ def main(cfg: OmegaConf):
 			noise_critic_grad_steps=cfg.train.noise_critic_grad_steps,
 			critic_backup_combine_type=cfg.train.critic_backup_combine_type,
 		)
+	elif cfg.algorithm == 'dsrl_sac':
+			# DSRL-SAC is just standard SAC on the noise action space
+			# The DiffusionPolicyEnvWrapper handles noise -> action conversion
+			model = SAC(
+				"MlpPolicy",
+				env,
+				learning_rate=cfg.train.actor_lr,
+				buffer_size=10000000,
+				learning_starts=1,
+				batch_size=cfg.train.batch_size,
+				tau=cfg.train.tau,
+				gamma=cfg.train.discount,
+				train_freq=cfg.train.train_freq,
+				gradient_steps=cfg.train.utd,
+				action_noise=None,
+				optimize_memory_usage=False,
+				ent_coef="auto" if cfg.train.ent_coef == -1 else cfg.train.ent_coef,
+				target_update_interval=1,
+				target_entropy="auto" if cfg.train.target_ent == -1 else cfg.train.target_ent,
+				use_sde=False,
+				sde_sample_freq=-1,
+				tensorboard_log=cfg.logdir,
+				verbose=1,
+				policy_kwargs=policy_kwargs,
+				# No DSRL-specific params - SAC doesn't need them
+			)
 
 	checkpoint_callback = CheckpointCallback(
 		save_freq=cfg.save_model_interval, 
@@ -144,6 +170,9 @@ def main(cfg: OmegaConf):
 		logging_callback.set_timesteps(cfg.train.init_rollout_steps * num_env)
 
 	callbacks = [checkpoint_callback, logging_callback]
+
+	model.diffusion_policy.use_times_embeddings = False
+
 	# Train the agent
 	model.learn(
 		total_timesteps=200000,

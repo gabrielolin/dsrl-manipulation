@@ -179,6 +179,7 @@ class DiffusionPolicyEnvWrapper(VecEnvWrapper):
 	def step_async(self, actions):
 		actions = torch.tensor(actions, device=self.device, dtype=torch.float32)
 		actions = actions.view(-1, self.action_horizon, self.action_dim)
+		#print(self.obs.shape, actions.shape, "DiffusionPolicyEnvWrapper step_async")
 		diffused_actions = self.base_policy(self.obs, actions)
 		self.venv.step_async(diffused_actions)
 
@@ -192,6 +193,7 @@ class DiffusionPolicyEnvWrapper(VecEnvWrapper):
 			self.base_policy.state_history = [[] for _ in range(num_envs)]
 			self.base_policy.action_history = [[] for _ in range(num_envs)]
 		
+		#print("Updating history for", num_envs, "environments")
 		# Update each environment's history
 		for env_idx, info in enumerate(infos):
 			if 'obs_sequence' in info:
@@ -200,16 +202,16 @@ class DiffusionPolicyEnvWrapper(VecEnvWrapper):
 				for obs_i in info['obs_sequence']:
 					self.base_policy.state_history[env_idx].append(obs_i)
 					# Keep only last num_previous_states
-					if len(self.base_policy.state_history[env_idx]) > self.base_policy.num_previous_states:
-						self.base_policy.state_history[env_idx] = self.base_policy.state_history[env_idx][-self.base_policy.num_previous_states:]
+					# if len(self.base_policy.state_history[env_idx]) > self.base_policy.num_previous_states:
+					# 	self.base_policy.state_history[env_idx] = self.base_policy.state_history[env_idx][-self.base_policy.num_previous_states:]
 			
 			if 'action_sequence' in info:
 				# action_sequence is [act_steps, action_dim]
 				for action_i in info['action_sequence']:
 					self.base_policy.action_history[env_idx].append(action_i)
 					# Keep only last num_previous_actions
-					if len(self.base_policy.action_history[env_idx]) > self.base_policy.num_previous_actions:
-						self.base_policy.action_history[env_idx] = self.base_policy.action_history[env_idx][-self.base_policy.num_previous_actions:]
+					# if len(self.base_policy.action_history[env_idx]) > self.base_policy.num_previous_actions:
+					# 	self.base_policy.action_history[env_idx] = self.base_policy.action_history[env_idx][-self.base_policy.num_previous_actions:]
 			
 			# Reset history if episode is done
 			if dones[env_idx]:
