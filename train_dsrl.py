@@ -8,8 +8,8 @@ import wandb
 import numpy as np
 import hydra
 from omegaconf import OmegaConf
-import gym, d4rl
-import d4rl.gym_mujoco
+import gymnasium as gym
+
 import sys
 sys.path.append('./dppo')
  
@@ -17,8 +17,10 @@ from stable_baselines3 import SAC, DSRL
 from stable_baselines3.common.callbacks import CheckpointCallback, BaseCallback
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
-from env_utils import DiffusionPolicyEnvWrapper, ObservationWrapperRobomimic, ObservationWrapperGym, ActionChunkWrapper, make_robomimic_env
-from utils import load_base_policy, load_offline_data, collect_rollouts, LoggingCallback
+from env_utils import DiffusionPolicyEnvWrapper, ObservationWrapperRobomimic, ObservationWrapperGym, ActionChunkWrapper
+from dsrl_utils import load_base_policy, load_offline_data, collect_rollouts, LoggingCallback
+
+from diffusion.envs.panda_teleop_env import PandaTeleopEnv
 
 OmegaConf.register_new_resolver("eval", eval, replace=True)
 OmegaConf.register_new_resolver("round_up", math.ceil)
@@ -27,10 +29,8 @@ OmegaConf.register_new_resolver("round_down", math.floor)
 base_path = os.path.dirname(os.path.abspath(__file__))
 
 	
-
-
 @hydra.main(
-	config_path=os.path.join(base_path, "cfg/robomimic"), config_name="dsrl_can.yaml", version_base=None
+	config_path=os.path.join(base_path, "cfg/gym"), config_name="dsrl.panda.yaml", version_base=None
 )
 def main(cfg: OmegaConf):
 	OmegaConf.resolve(cfg)
@@ -45,7 +45,6 @@ def main(cfg: OmegaConf):
 			name=cfg.name,
 			group=cfg.wandb.group,
 			monitor_gym=True,
-			save_code=True,
 			config=OmegaConf.to_container(cfg, resolve=True),
 		)
 
@@ -53,19 +52,13 @@ def main(cfg: OmegaConf):
 
 	num_env = cfg.env.n_envs
 	def make_env():
-		if cfg.env_name in ['halfcheetah-medium-v2', 'hopper-medium-v2', 'walker2d-medium-v2']:
-			env = gym.make(cfg.env_name)
-			env = ObservationWrapperGym(env, cfg.normalization_path)
-		elif cfg.env_name in ['lift', 'can', 'square', 'transport']:
-			env = make_robomimic_env(env=cfg.env_name, normalization_path=cfg.normalization_path, low_dim_keys=cfg.env.wrappers.robomimic_lowdim.low_dim_keys, dppo_path=cfg.dppo_path)
-			env = ObservationWrapperRobomimic(env, reward_offset=cfg.env.reward_offset)
+		env = PandaTeleopEnv(max_steps=cfg.env.max_episode_steps, control_dt=0.0625*2, action_type='absolute_position', randomize_goal=True)
 		env = ActionChunkWrapper(env, cfg, max_episode_steps=cfg.env.max_episode_steps)
 		return env
 
 	base_policy = load_base_policy(cfg)
 	env = make_vec_env(make_env, n_envs=num_env, vec_env_cls=SubprocVecEnv)
-	if cfg.algorithm == 'dsrl_sac':
-		env = DiffusionPolicyEnvWrapper(env, cfg, base_policy)
+	env = DiffusionPolicyEnvWrapper(env, cfg, base_policy)
 	env.seed(cfg.seed + 1)
 	post_linear_modules = None
 	if cfg.train.use_layer_norm:
@@ -81,30 +74,8 @@ def main(cfg: OmegaConf):
 		post_linear_modules=post_linear_modules,
 		n_critics=cfg.train.n_critics,
 	)
-	if cfg.algorithm == 'dsrl_sac':
-		model = SAC(
-			"MlpPolicy",
-			env,
-			learning_rate=cfg.train.actor_lr,
-			buffer_size=20000000,      # Replay buffer size
-			learning_starts=1,    # How many steps before learning starts (total steps for all env combined)
-			batch_size=cfg.train.batch_size,
-			tau=cfg.train.tau,                # Target network update rate
-			gamma=cfg.train.discount,               # Discount factor
-			train_freq=cfg.train.train_freq,             # Update the model every train_freq steps
-			gradient_steps=cfg.train.utd,         # How many gradient steps to do at each update
-			action_noise=None,        # No additional action noise
-			optimize_memory_usage=False,
-			ent_coef="auto" if cfg.train.ent_coef == -1 else cfg.train.ent_coef,          # Automatic entropy tuning
-			target_update_interval=1, # Update target network every interval
-			target_entropy="auto" if cfg.train.target_ent == -1 else cfg.train.target_ent,    # Automatic target entropy
-			use_sde=False,
-			sde_sample_freq=-1,
-			tensorboard_log=cfg.logdir,
-			verbose=1,
-			policy_kwargs=policy_kwargs,
-		)
-	elif cfg.algorithm == 'dsrl_na':
+
+	if cfg.algorithm == 'dsrl_na':
 		model = DSRL(
 			"MlpPolicy",
 			env,
@@ -142,8 +113,6 @@ def main(cfg: OmegaConf):
 
 	num_env_eval = cfg.env.n_eval_envs
 	eval_env = make_vec_env(make_env, n_envs=num_env_eval, vec_env_cls=SubprocVecEnv)
-	if cfg.algorithm == 'dsrl_sac':
-		eval_env = DiffusionPolicyEnvWrapper(eval_env, cfg, base_policy)
 	eval_env.seed(cfg.seed + num_env + 1) 
 
 	logging_callback = LoggingCallback(
@@ -161,7 +130,7 @@ def main(cfg: OmegaConf):
 		deterministic_eval=cfg.deterministic_eval,
 	)
 
-	logging_callback.evaluate(model, deterministic=False)
+	#logging_callback.evaluate(model, deterministic=False)
 	if cfg.deterministic_eval:
 		logging_callback.evaluate(model, deterministic=True)
 	logging_callback.log_count += 1

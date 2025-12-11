@@ -1,56 +1,13 @@
 import os
 import numpy as np
-from omegaconf import OmegaConf
 import torch
-import hydra
 import sys
-import gym
-import gymnasium
+import gymnasium as gym
 from gymnasium import spaces
 from stable_baselines3.common.vec_env import VecEnvWrapper
 import json
 
-from dppo.env.gym_utils.wrapper import wrapper_dict
-import robomimic.utils.env_utils as EnvUtils
-import robomimic.utils.obs_utils as ObsUtils
-
-
-def make_robomimic_env(render=False, env='square', normalization_path=None, low_dim_keys=None, dppo_path=None):
-	wrappers = OmegaConf.create({
-		'robomimic_lowdim': {
-			'normalization_path': normalization_path,
-			'low_dim_keys': low_dim_keys,
-		},
-	})
-	obs_modality_dict = {
-		"low_dim": (
-			wrappers.robomimic_image.low_dim_keys
-			if "robomimic_image" in wrappers
-			else wrappers.robomimic_lowdim.low_dim_keys
-		),
-		"rgb": (
-			wrappers.robomimic_image.image_keys
-			if "robomimic_image" in wrappers
-			else None
-		),
-	}
-	if obs_modality_dict["rgb"] is None:
-		obs_modality_dict.pop("rgb")
-	ObsUtils.initialize_obs_modality_mapping_from_dict(obs_modality_dict)
-	robomimic_env_cfg_path = f'{dppo_path}/cfg/robomimic/env_meta/{env}.json'
-	with open(robomimic_env_cfg_path, "r") as f:
-		env_meta = json.load(f)
-	env_meta["reward_shaping"] = False
-	env = EnvUtils.create_env_from_metadata(
-		env_meta=env_meta,
-		render=False,
-		render_offscreen=render,
-		use_image_obs=False,
-	)
-	env.env.hard_reset = False
-	for wrapper, args in wrappers.items():
-		env = wrapper_dict[wrapper](env, **args)
-	return env
+#from dppo.env.gym_utils.wrapper import wrapper_dict
 
 
 class ObservationWrapperRobomimic(gym.Env):
@@ -136,8 +93,8 @@ class ObservationWrapperGym(gym.Env):
 		return action * (self.action_max - self.action_min) + self.action_min
 	
 
-class ActionChunkWrapper(gymnasium.Env):
-	def __init__(self, env, cfg, max_episode_steps=300):
+class ActionChunkWrapper(gym.Env):
+	def __init__(self, env, cfg, max_episode_steps=200):
 		self.max_episode_steps = max_episode_steps
 		self.env = env
 		self.act_steps = cfg.act_steps
@@ -162,6 +119,7 @@ class ActionChunkWrapper(gymnasium.Env):
 		if len(action.shape) == 1:
 			action = action.reshape(self.act_steps, -1)
 		obs_ = []
+		acts_ = []
 		reward_ = []
 		done_ = []
 		info_ = []
@@ -170,6 +128,7 @@ class ActionChunkWrapper(gymnasium.Env):
 			self.count += 1
 			obs_i, reward_i, done_i, info_i = self.env.step(action[i])
 			obs_.append(obs_i)
+			acts_.append(action[i])
 			reward_.append(reward_i)
 			done_.append(done_i)
 			info_.append(info_i)
@@ -177,6 +136,8 @@ class ActionChunkWrapper(gymnasium.Env):
 		reward = sum(reward_)
 		done = np.max(done_)
 		info = info_[-1]
+		info['obs_sequence'] = obs_
+		info['action_sequence'] = acts_
 		if self.count >= self.max_episode_steps:
 			done = True
 		if done:
@@ -219,6 +180,37 @@ class DiffusionPolicyEnvWrapper(VecEnvWrapper):
 
 	def step_wait(self):
 		obs, rewards, dones, infos = self.venv.step_wait()
+		# Update base_policy history per environment
+		num_envs = len(infos)
+		
+		# Initialize history if needed
+		if len(self.base_policy.state_history) == 0:
+			self.base_policy.state_history = [[] for _ in range(num_envs)]
+			self.base_policy.action_history = [[] for _ in range(num_envs)]
+		
+		# Update each environment's history
+		for env_idx, info in enumerate(infos):
+			if 'obs_sequence' in info:
+				# obs_sequence is [act_steps, obs_dim]
+				# Extend the history with each individual observation
+				for obs_i in info['obs_sequence']:
+					self.base_policy.state_history[env_idx].append(obs_i)
+					# Keep only last num_previous_states
+					if len(self.base_policy.state_history[env_idx]) > self.base_policy.num_previous_states:
+						self.base_policy.state_history[env_idx] = self.base_policy.state_history[env_idx][-self.base_policy.num_previous_states:]
+			
+			if 'action_sequence' in info:
+				# action_sequence is [act_steps, action_dim]
+				for action_i in info['action_sequence']:
+					self.base_policy.action_history[env_idx].append(action_i)
+					# Keep only last num_previous_actions
+					if len(self.base_policy.action_history[env_idx]) > self.base_policy.num_previous_actions:
+						self.base_policy.action_history[env_idx] = self.base_policy.action_history[env_idx][-self.base_policy.num_previous_actions:]
+			
+			# Reset history if episode is done
+			if dones[env_idx]:
+				self.base_policy.state_history[env_idx] = []
+				self.base_policy.action_history[env_idx] = []
 		self.obs = torch.tensor(obs, device=self.device, dtype=torch.float32)
 		obs_out = self.obs
 		return obs_out.detach().cpu().numpy(), rewards, dones, infos

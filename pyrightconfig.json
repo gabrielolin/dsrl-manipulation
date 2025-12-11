@@ -1,0 +1,9 @@
+{
+  "include": [
+    "."
+  ],
+  "extraPaths": [
+    "/home/gabe/miniconda3/envs/diffusion-rl/lib/python3.11/site-packages"
+  ],
+  "pythonVersion": "3.11"
+}
