@@ -199,17 +199,11 @@ class DiffusionPolicyEnvWrapper(VecEnvWrapper):
 				# Extend the history with each individual observation
 				for obs_i in info['obs_sequence']:
 					self.base_policy.state_history[env_idx].append(obs_i)
-					# Keep only last num_previous_states
-					if len(self.base_policy.state_history[env_idx]) > self.base_policy.num_previous_states:
-						self.base_policy.state_history[env_idx] = self.base_policy.state_history[env_idx][-self.base_policy.num_previous_states:]
 			
 			if 'action_sequence' in info:
 				# action_sequence is [act_steps, action_dim]
 				for action_i in info['action_sequence']:
 					self.base_policy.action_history[env_idx].append(action_i)
-					# Keep only last num_previous_actions
-					if len(self.base_policy.action_history[env_idx]) > self.base_policy.num_previous_actions:
-						self.base_policy.action_history[env_idx] = self.base_policy.action_history[env_idx][-self.base_policy.num_previous_actions:]
 			
 			# Reset history if episode is done
 			if dones[env_idx]:
