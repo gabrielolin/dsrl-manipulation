@@ -28,13 +28,15 @@ OmegaConf.register_new_resolver("round_down", math.floor)
 
 base_path = os.path.dirname(os.path.abspath(__file__))
 
-	
+print(base_path)
 @hydra.main(
-	config_path=os.path.join(base_path, "cfg/gym"), config_name="dsrl.panda.yaml", version_base=None
+	config_path=os.path.join(base_path, "cfg/gym"), config_name="dsrl_panda.yaml", version_base=None
+
 )
 def main(cfg: OmegaConf):
 	OmegaConf.resolve(cfg)
-
+	print(f"Config name: {cfg.get('name', 'UNKNOWN')}")
+	print(f"Env name: {cfg.env.name}")
 	random.seed(cfg.seed)
 	np.random.seed(cfg.seed)
 	torch.manual_seed(cfg.seed)
@@ -144,7 +146,7 @@ def main(cfg: OmegaConf):
 	callbacks = [checkpoint_callback, logging_callback]
 	# Train the agent
 	model.learn(
-		total_timesteps=20000000,
+		total_timesteps=200000,
 		callback = callbacks
 	)
 

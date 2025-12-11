@@ -113,7 +113,7 @@ class ActionChunkWrapper(gym.Env):
 	def reset(self, seed=None):
 		obs = self.env.reset(seed=seed)
 		self.count = 0
-		return obs, {}
+		return obs
 	
 	def step(self, action):
 		if len(action.shape) == 1:
@@ -126,7 +126,8 @@ class ActionChunkWrapper(gym.Env):
 		done_i = False
 		for i in range(action.shape[0]):
 			self.count += 1
-			obs_i, reward_i, done_i, info_i = self.env.step(action[i])
+			obs_i, reward_i, terminated_i, truncated_i, info_i = self.env.step(action[i])
+			done_i = terminated_i or truncated_i
 			obs_.append(obs_i)
 			acts_.append(action[i])
 			reward_.append(reward_i)
@@ -140,9 +141,12 @@ class ActionChunkWrapper(gym.Env):
 		info['action_sequence'] = acts_
 		if self.count >= self.max_episode_steps:
 			done = True
+			truncated = True
+		else:
+			truncated = False
 		if done:
 			info['terminal_observation'] = obs
-		return obs, reward, done, False, info
+		return obs, reward, done, truncated, info
 
 	def render(self):
 		return self.env.render()

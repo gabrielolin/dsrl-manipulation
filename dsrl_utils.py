@@ -5,6 +5,7 @@ from stable_baselines3.common.callbacks import BaseCallback
 import hydra
 import sys
 import os
+from tqdm import tqdm
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../diffusion_rl'))
 from diffusion_policy_transformer import PolicyDiffusionTransformer
 from train_diffusion_policy import TrainDiffusionPolicy
@@ -70,8 +71,12 @@ class PandaDiffusionPolicyWrapper:
         
         for i in range(batch_size):
             # Get state sequence
-            states = np.array(self.state_history[i][-self.num_previous_states:])
-            state_seq_len = len(states)
+            if len(self.state_history[i]) > 0:
+                states = np.array(self.state_history[i][-self.num_previous_states:])
+                state_seq_len = len(states)
+            else:
+                states = np.zeros((0, obs_np.shape[1]))
+                state_seq_len = 0
             
             # Pad states if needed
             if state_seq_len < self.num_previous_states:
@@ -197,6 +202,8 @@ def load_base_policy(cfg):
         states_array=dummy_states,
         actions_array=dummy_actions,
         device=device,
+		multi_goal=True,
+		load_checkpoint=True
     )
     
     # Load normalization stats from checkpoint
@@ -354,20 +361,18 @@ class LoggingCallback(BaseCallback):
 
 def collect_rollouts(model, env, num_steps, base_policy, cfg):
 	obs = env.reset()
-	for i in range(num_steps):
+	for i in tqdm(range(num_steps), desc="Collecting rollouts"):
 		noise = torch.randn(cfg.env.n_envs, cfg.act_steps, cfg.action_dim).to(device=cfg.device)
 		if cfg.algorithm == 'dsrl_sac':
 			noise[noise < -cfg.train.action_magnitude] = -cfg.train.action_magnitude
 			noise[noise > cfg.train.action_magnitude] = cfg.train.action_magnitude
 		action = base_policy(torch.tensor(obs, device=cfg.device, dtype=torch.float32), noise)
 		next_obs, reward, done, info = env.step(action)
-		env.base_policy.state_history.append(next_obs.cpu().numpy())
-		env.base_policy.action_history.append(action[:, :cfg.action_dim].cpu().numpy())
 		if cfg.algorithm == 'dsrl_na':
 			action_store = action
 		elif cfg.algorithm == 'dsrl_sac':
 			action_store = noise.detach().cpu().numpy()
-		action_store = action_store.reshape(-1, action_store.shape[1] * action_store.shape[2])
+			action_store = action_store.reshape(-1, action_store.shape[1] * action_store.shape[2])
 		if cfg.algorithm == 'dsrl_sac':
 			action_store = model.policy.scale_action(action_store)
 		model.replay_buffer.add(
