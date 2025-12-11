@@ -40,6 +40,7 @@ class PandaDiffusionPolicyWrapper:
         self.num_previous_states = num_previous_states
         self.num_previous_actions = num_previous_actions
         self.trainer.model.eval()
+        self.use_time_embedding = True
         
         # State/action history tracking per environment
         self.state_history = []
@@ -121,8 +122,7 @@ class PandaDiffusionPolicyWrapper:
             # Episode timesteps
             current_timestep = len(self.state_history[i]) - 1
             start_timestep = max(0, current_timestep - self.num_previous_states + 1)
-
-            if self.use_times_embeddings:
+            if self.use_time_embedding:
                 episode_timesteps = np.arange(start_timestep, start_timestep + self.num_previous_states)
             else:
                 episode_timesteps = np.zeros(self.num_previous_states)

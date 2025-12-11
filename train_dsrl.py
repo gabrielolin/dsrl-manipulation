@@ -96,7 +96,7 @@ def main(cfg: OmegaConf):
 			target_entropy="auto" if cfg.train.target_ent == -1 else cfg.train.target_ent,    # Automatic target entropy
 			use_sde=False,
 			sde_sample_freq=-1,
-			tensorboard_log=cfg.logdir,
+			tensorboard_log=None,
 			verbose=1,
 			policy_kwargs=policy_kwargs,
 			diffusion_policy=base_policy,
@@ -170,9 +170,7 @@ def main(cfg: OmegaConf):
 		logging_callback.set_timesteps(cfg.train.init_rollout_steps * num_env)
 
 	callbacks = [checkpoint_callback, logging_callback]
-
-	model.diffusion_policy.use_times_embeddings = False
-
+	model.diffusion_policy.use_time_embedding = False
 	# Train the agent
 	model.learn(
 		total_timesteps=200000,
